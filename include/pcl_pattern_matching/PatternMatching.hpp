@@ -3,10 +3,10 @@
 
 #include "pcl_pattern_matching/Global2Local.hpp"
 #include "pcl_pattern_matching/Util.hpp"
+#include "pcl_pattern_matching/MatchingParameters.hpp"
 #include <algorithm>
-#include <limits>
 #include <nav_msgs/Odometry.h>
-#include <pcl_pattern_matching/WallDetectionParametersConfig.h>
+#include <pcl_pattern_matching/PatternMatchingParametersConfig.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -37,35 +37,17 @@
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/image_encodings.h>
 
-namespace detection {
-
-struct WallDetectionParameters {
-  static constexpr double MAX_BOX = std::numeric_limits<double>::max();
-  static constexpr double MIN_HEIGHT = 2;
-  static constexpr double MAX_HEIGHT = 2.5;
-  static constexpr double OUTLIER_MEAN = 100;
-  static constexpr double OUTLIER_STDDEV = 0.1;
-  static constexpr float UPSCALE_INCREMENT = 0.01;
-  static constexpr float UPSCALE_LIMIT = 0.75;
-  static constexpr double MAX_FIT = 1e5;
-  static constexpr double DILATION_FACTOR = 9;
-  static constexpr double CLOUD_RESOLUTION = 20.0;
-  static constexpr int MIN_MATCH_SIZE = 3500;
-  static constexpr double MAX_DISTANCE = 3;
-  static constexpr int COUNTER_THRESHOLD = 2;
-  static constexpr double LOOP_RATE = 0.1;
-  static constexpr float SCALING_FACTOR = 1000.0;
-  static constexpr auto WARN_TIME = 5;
-};
+namespace pcl_pattern {
 
 using namespace ros_util;
+using namespace pcl_params;
 using PCXYZ = pcl::PointCloud<pcl::PointXYZ>;
 using ROSCloud = sensor_msgs::PointCloud2;
-using DetectionConfig = pointcloud_filter::WallDetectionParametersConfig;
+using DetectionConfig = pcl_pattern_matching::PatternMatchingParametersConfig;
 
-class WallDetection {
+class PatternMatching {
 public:
-  explicit WallDetection(ros::NodeHandle &t_nh)
+  explicit PatternMatching(ros::NodeHandle &t_nh)
       : m_handlerMapCloud(t_nh, "submap_cloud"), m_g2l(t_nh) {
     initialize_parameters(t_nh);
     m_pubFilteredCloud = t_nh.advertise<ROSCloud>("filtered_cloud", 1);
@@ -78,8 +60,8 @@ public:
     m_pubResultImage = it.advertise("result_image", 1);
     m_pubWallTargetImage = it.advertise("target_image", 1);
 
-    m_loopTimer = t_nh.createTimer(WallDetectionParameters::LOOP_RATE,
-                                   &WallDetection::loop_event, this);
+    m_loopTimer = t_nh.createTimer(MatchingParams::LOOP_TIME,
+                                   &PatternMatching::loop_event, this);
 
     m_targetWallCloud = boost::make_shared<PCXYZ>();
     wall_from_ply(m_targetWallCloud,
@@ -91,8 +73,8 @@ public:
 private:
   void do_icp(const PCXYZ::Ptr &t_inputCloud, const PCXYZ::Ptr &t_targetCloud) {
     if (t_inputCloud->empty()) {
-      ROS_WARN_THROTTLE(WallDetectionParameters::WARN_TIME,
-                        "WallDetection::do_icp - empty cloud");
+      ROS_WARN_THROTTLE(MatchingParams::WARN_TIME,
+                        "PatternMatching::do_icp - empty cloud");
       return;
     }
 
@@ -102,10 +84,10 @@ private:
     auto alignedCloud = boost::make_shared<PCXYZ>();
     icp.align(*alignedCloud);
     ROS_INFO_COND(icp.hasConverged(),
-                  "WallDetection::do_icp - ICP converged. Score: [%.2f]",
+                  "PatternMatching::do_icp - ICP converged. Score: [%.2f]",
                   icp.getFitnessScore());
     ROS_FATAL_COND(!icp.hasConverged(),
-                   "WallDetection::do_icp - ICP did not converge. :(");
+                   "PatternMatching::do_icp - ICP did not converge. :(");
 
     if (!icp.hasConverged()) {
       return;
@@ -120,36 +102,33 @@ private:
     auto wallCloud = boost::make_shared<PCXYZ>();
     std::string path =
         ros::package::getPath("pointcloud_filter") + "/" + plyPath;
-    ROS_INFO("WallDetection - %s", path.c_str());
+    ROS_INFO("PatternMatching - %s", path.c_str());
     if (pcl::io::loadPLYFile(path, *wallCloud) == -1) {
-      ROS_FATAL("WallDetection - unable to load whe wall mesh, exiting...");
-      throw std::runtime_error("WallDetection - unable to load wall mesh");
+      ROS_FATAL("PatternMatching - unable to load whe wall mesh, exiting...");
+      throw std::runtime_error("PatternMatching - unable to load wall mesh");
     }
 
     auto wallWithMean = boost::make_shared<PCXYZ>();
     for (const auto &point : wallCloud->points) {
       wallWithMean->points.emplace_back(
-          pcl::PointXYZ(point.x / WallDetectionParameters::SCALING_FACTOR,
-                        point.y / WallDetectionParameters::SCALING_FACTOR,
-                        point.z / WallDetectionParameters::SCALING_FACTOR));
+          pcl::PointXYZ(point.x / MatchingParams::SCALING_FACTOR,
+                        point.y / MatchingParams::SCALING_FACTOR,
+                        point.z / MatchingParams::SCALING_FACTOR));
     }
 
     // Upscale the wall
-    static constexpr double INITIAL_POSITION = 0.01;
-    static constexpr auto ITER_COUNT =
-        static_cast<int>(WallDetectionParameters::UPSCALE_LIMIT /
-                         WallDetectionParameters::UPSCALE_INCREMENT);
-    for (int i = 0; i < ITER_COUNT; i++) {
-      for (int j = 0; j < ITER_COUNT; j++) {
+    static const auto upscale_element = [&](const float unscaledPoint,
+                                     const int iter) {
+      return unscaledPoint / MatchingParams::SCALING_FACTOR +
+             MatchingParams::UPSCALE_OFFSET +
+             iter * MatchingParams::UPSCALE_INCREMENT;
+    };
+    for (int i = 0; i < MatchingParams::UPSCALE_ITER; i++) {
+      for (int j = 0; j < MatchingParams::UPSCALE_ITER; j++) {
         for (const auto &point : wallCloud->points) {
-          wallWithMean->points.emplace_back(
-              pcl::PointXYZ(point.x / WallDetectionParameters::SCALING_FACTOR +
-                                INITIAL_POSITION +
-                                i * WallDetectionParameters::UPSCALE_INCREMENT,
-                            point.y / WallDetectionParameters::SCALING_FACTOR +
-                                INITIAL_POSITION +
-                                j * WallDetectionParameters::UPSCALE_INCREMENT,
-                            point.z / WallDetectionParameters::SCALING_FACTOR));
+          wallWithMean->points.emplace_back(pcl::PointXYZ(
+              upscale_element(point.x, i), upscale_element(point.y, i),
+              point.z / MatchingParams::SCALING_FACTOR));
         }
       }
     }
@@ -226,11 +205,12 @@ private:
   Eigen::Matrix4f template_matching(const cv::Mat &t_source8UC1,
                                     const cv::Mat &t_target8UC1) {
     if (t_source8UC1.empty()) {
-      ROS_WARN_THROTTLE(WallDetectionParameters::WARN_TIME,
+      ROS_WARN_THROTTLE(MatchingParams::WARN_TIME,
                         "template_matching - source is empty.");
       return {};
     }
 
+    // Dilate the pointcloud
     cv::Mat resultImage(t_source8UC1);
     double dilation_size = m_handlerParam->getData().dilation_factor;
     cv::Mat element = getStructuringElement(
@@ -255,7 +235,7 @@ private:
     for (int i = 0; i < sourceContours.size(); i++) {
 
       if (cv::contourArea(sourceContours[i]) <
-          m_handlerParam->getData().min_match_size) {
+          m_handlerParam->getData().min_point_count) {
         continue;
       }
 
@@ -268,7 +248,8 @@ private:
     }
 
     if (bestMatchedIndex < 0) {
-      ROS_FATAL("WallDetection::template_matching - unable to match contours");
+      ROS_FATAL(
+          "PatternMatching::template_matching - unable to match contours");
       return {};
     }
 
@@ -281,12 +262,12 @@ private:
     int cX = int(M.m10 / M.m00);
     int cY = int(M.m01 / M.m00);
     Eigen::Matrix4f transform = Eigen::Matrix4f::Identity();
-    transform(1, 3) = (cX - t_source8UC1.rows / 2.0) /
-                          WallDetectionParameters::CLOUD_RESOLUTION +
-                      m_lastFoundMapCentroid.y();
-    transform(0, 3) = (cY - t_source8UC1.cols / 2.0) /
-                          WallDetectionParameters::CLOUD_RESOLUTION +
-                      m_lastFoundMapCentroid.x();
+    transform(1, 3) =
+        (cX - t_source8UC1.rows / 2.0) / MatchingParams::ORG_PCL_RESOLUTION +
+        m_lastFoundMapCentroid.y();
+    transform(0, 3) =
+        (cY - t_source8UC1.cols / 2.0) / MatchingParams::ORG_PCL_RESOLUTION +
+        m_lastFoundMapCentroid.x();
     transform(2, 3) = m_lastFoundMapCentroid.z();
     ROS_INFO_STREAM("Target transform: " << transform);
 
@@ -294,12 +275,12 @@ private:
         sqrt(pow(transform(0, 3) - m_bestTransformation(0, 3), 2) +
              pow(transform(1, 3) - m_bestTransformation(1, 3), 2));
 
-    if (distance_from_previous > WallDetectionParameters::MAX_DISTANCE) {
-      ROS_WARN("WallDetection - resetting detection counter.");
+    if (distance_from_previous > MatchingParams::MAX_POSE_DISTANCE_TOLERANCE) {
+      ROS_WARN("PatternMatching - resetting detection counter.");
       m_detectionCounter = 0;
     } else {
       m_detectionCounter++;
-      ROS_INFO("WallDetection - counter at %d", m_detectionCounter);
+      ROS_INFO("PatternMatching - counter at %d", m_detectionCounter);
     }
     m_bestTransformation = transform;
 
@@ -309,7 +290,7 @@ private:
 
     // add_wall_position(m_bestTransformation(0, 3), m_bestTransformation(1,
     // 3)); std::pair<double, double> wallPosition;
-    if (m_detectionCounter >= WallDetectionParameters::COUNTER_THRESHOLD) {
+    if (m_detectionCounter >= MatchingParams::POSE_COUNT_THRESHOLD) {
       auto wallGlobal = m_g2l.toGlobal(m_bestTransformation(0, 3),
                                        m_bestTransformation(1, 3), 0);
       m_nh.setParam("brick_dropoff/lat", wallGlobal.x());
@@ -328,9 +309,8 @@ private:
     }
 
     auto organizedCloud = boost::make_shared<PCXYZ>(
-        t_width * WallDetectionParameters::CLOUD_RESOLUTION,
-        t_height * WallDetectionParameters::CLOUD_RESOLUTION,
-        pcl::PointXYZ(0, 0, 0));
+        t_width * MatchingParams::ORG_PCL_RESOLUTION,
+        t_height * MatchingParams::ORG_PCL_RESOLUTION, pcl::PointXYZ(0, 0, 0));
 
     const auto out_of_range = [&organizedCloud](const std::size_t t_x,
                                                 const std::size_t t_y) {
@@ -343,11 +323,9 @@ private:
     const std::size_t indexOffsetY = round(organizedCloud->height / 2.0);
     const auto add_to_organized_cloud = [&](const pcl::PointXYZ &point) {
       const std::size_t indX =
-          round(point.x * WallDetectionParameters::CLOUD_RESOLUTION) +
-          indexOffsetX;
+          round(point.x * MatchingParams::ORG_PCL_RESOLUTION) + indexOffsetX;
       const std::size_t indY =
-          round(point.y * WallDetectionParameters::CLOUD_RESOLUTION) +
-          indexOffsetY;
+          round(point.y * MatchingParams::ORG_PCL_RESOLUTION) + indexOffsetY;
 
       if (out_of_range(indX, indY)) {
         return;
@@ -449,12 +427,12 @@ private:
 
   void initialize_parameters(ros::NodeHandle & /*unused*/) {
     DetectionConfig config;
-    config.outlier_filter_mean = WallDetectionParameters::OUTLIER_MEAN;
-    config.outlier_filter_stddev = WallDetectionParameters::OUTLIER_STDDEV;
-    config.min_crop_height = WallDetectionParameters::MIN_HEIGHT;
-    config.max_crop_height = WallDetectionParameters::MAX_HEIGHT;
-    config.dilation_factor = WallDetectionParameters::DILATION_FACTOR;
-    config.min_match_size = WallDetectionParameters::MIN_MATCH_SIZE;
+    config.outlier_filter_mean = MatchingParams::OUTLIER_FILTER_MEAN;
+    config.outlier_filter_stddev = MatchingParams::OUTLIER_FILTER_STDDEV;
+    config.min_crop_height = MatchingParams::MIN_CROP_HEIGHT;
+    config.max_crop_height = MatchingParams::MAX_CROP_HEIGHT;
+    config.dilation_factor = MatchingParams::DILATION_FACTOR;
+    config.min_point_count = MatchingParams::MIN_POINT_COUNT;
     m_handlerParam = std::make_shared<ParamHandler<DetectionConfig>>(
         config, "wall_detection");
   }
@@ -488,10 +466,10 @@ private:
     auto newCloud = boost::make_shared<PCXYZ>();
     pcl::CropBox<pcl::PointXYZ> boxFilter;
     boxFilter.setMin(Eigen::Vector4f(
-        -WallDetectionParameters::MAX_BOX, -WallDetectionParameters::MAX_BOX,
+        -MatchingParams::CROP_BOX_DIM, -MatchingParams::CROP_BOX_DIM,
         m_handlerParam->getData().min_crop_height, 0.0));
     boxFilter.setMax(Eigen::Vector4f(
-        WallDetectionParameters::MAX_BOX, WallDetectionParameters::MAX_BOX,
+        MatchingParams::CROP_BOX_DIM, MatchingParams::CROP_BOX_DIM,
         m_handlerParam->getData().max_crop_height, 0.0));
     boxFilter.setInputCloud(t_inputCloud);
     boxFilter.filter(*newCloud);
@@ -525,7 +503,6 @@ private:
   ros::Timer m_loopTimer;
   Eigen::Vector4f m_lastFoundMapCentroid;
   Eigen::Matrix4f m_bestTransformation;
-  double m_maxFitness = WallDetectionParameters::MAX_FIT;
 
   ros::Publisher m_pubFilteredCloud, m_pubTargetCloud, m_pubAlignedCloud,
       m_pubWallOdometry;
@@ -544,5 +521,5 @@ private:
   int m_detectionCounter = 0;
 };
 
-} // namespace detection
+} // namespace pcl_pattern
 #endif /* WALL_DETECTION_H */

@@ -12,7 +12,7 @@ find_package(
              image_transport
              mavros)
 
-generate_dynamic_reconfigure_options(config/WallDetectionParameters.cfg)
+generate_dynamic_reconfigure_options(config/PatternMatchingParameters.cfg)
 
 list(INSERT CMAKE_MODULE_PATH 0 "/usr/share/cmake/geographiclib/")
 find_package(GeographicLib REQUIRED)
@@ -26,7 +26,7 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS}
                     ${OpenCV_INCLUDE_DIRS})
 
 add_definitions(${PCL_DEFINITIONS})
-add_executable(wall_detection src/WallDetectionNode.cpp)
-target_link_libraries(wall_detection ${catkin_LIBRARIES} ${PCL_LIBRARIES}
-                      ${OpenCV_LIBS})
-add_dependencies(wall_detection ${catkin_EXPORTED_TARGETS})
+add_executable(pattern_matching_node src/PatternMatchingNode.cpp)
+target_link_libraries(pattern_matching_node ${catkin_LIBRARIES}
+                      ${PCL_LIBRARIES} ${OpenCV_LIBS})
+add_dependencies(pattern_matching_node ${catkin_EXPORTED_TARGETS})
