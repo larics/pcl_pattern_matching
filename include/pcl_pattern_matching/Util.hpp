@@ -47,8 +47,8 @@ T getParamOrThrow(ros::NodeHandle& nh, const std::string& param_name) {
 template<class T>
 class TopicHandler {
 public:
-  TopicHandler(ros::NodeHandle& t_nh, const std::string& t_topicName, const double t_timeoutDuration = 2) :
-    m_topicName(t_topicName),
+  TopicHandler(ros::NodeHandle& t_nh, std::string t_topicName, const double t_timeoutDuration = 2) :
+    m_topicName(std::move(t_topicName)),
     m_topicTimeout(t_timeoutDuration),
     m_lastMessgeTime(0),
     m_isResponsive(false),
@@ -86,7 +86,7 @@ private:
     m_messageRecieved = true;
   }
 
-  void watchdog_callback(const ros::TimerEvent& e)
+  void watchdog_callback(const ros::TimerEvent& /*Unused*/)
   {
     double elapsedTime = ros::Time::now().toSec() - m_lastMessgeTime;
     if (elapsedTime > m_topicTimeout) {

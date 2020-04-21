@@ -2,7 +2,7 @@
 <package format="2">
   <name>pcl_pattern_matching</name>
   <version>0.0.0</version>
-  <description>3D model pattern matching in unorganized pointclouds.</description>
+  <description>This repository uses PCL and OpenCV libraries to perform 3D pattern matching on an unorganized pointcloud.</description>
 
   <maintainer email="a@todo.todo">a</maintainer>
 

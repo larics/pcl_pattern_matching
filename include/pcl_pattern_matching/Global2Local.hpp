@@ -13,7 +13,7 @@ using namespace ros_util;
 
 class Global2Local {
 public:
-Global2Local(ros::NodeHandle& nh) :
+explicit Global2Local(ros::NodeHandle& nh) :
     m_homeHandler(nh, "mavros/global_position/home", -1) { }
 
 Eigen::Vector3d toGlobal(const double t_enuX, const double t_enuY, const double t_enuZ)
@@ -49,8 +49,8 @@ Eigen::Vector3d toLocal(const double lat, const double lon, const double alt, bo
     GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
             GeographicLib::Constants::WGS84_f());
 
-    Eigen::Vector3d ecef_origin, 
-    map_origin(
+    Eigen::Vector3d ecef_origin; 
+    Eigen::Vector3d map_origin(
       m_homeHandler.getData().geo.latitude, 
       m_homeHandler.getData().geo.longitude, 
       m_homeHandler.getData().geo.altitude);
