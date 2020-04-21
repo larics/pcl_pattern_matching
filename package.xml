@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pcl_pattern_matching</name>
+  <version>0.0.0</version>
+  <description>3D model pattern matching in unorganized pointclouds.</description>
+
+  <maintainer email="a@todo.todo">a</maintainer>
+
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <export>
+
+  </export>
+</package>
