@@ -9,7 +9,8 @@ namespace pcl_params {
  * @brief Initial parameters for 3D model pattern matching in the pointcloud.
  *
  */
-struct MatchingParams {
+struct MatchingParams
+{
 
   // Crop box dimensions
   static constexpr auto CROP_BOX_DIM = std::numeric_limits<double>::max();
@@ -20,18 +21,20 @@ struct MatchingParams {
   static constexpr auto OUTLIER_FILTER_MEAN = 100;
   static constexpr auto OUTLIER_FILTER_STDDEV = 0.1;
 
-  // Upscale parameters for the 3D model pattern
-  static constexpr auto UPSCALE_INCREMENT = 0.01;
-  static constexpr auto UPSCALE_LIMIT = 0.75;
-  static constexpr auto UPSCALE_OFFSET = 0.01;
-  static constexpr auto UPSCALE_ITER = static_cast<int>(
-      MatchingParams::UPSCALE_LIMIT / MatchingParams::UPSCALE_INCREMENT);
+  // Upsample parameters for the 3D model pattern
+  static constexpr auto UPSAMPLE_INCREMENT = 0.01;
+  static constexpr auto UPSAMPLE_LIMIT = 0.75;
+  static constexpr auto UPSAMPLE_OFFSET = 0.01;
+  static constexpr auto UPSAMPLE_ITER =
+    static_cast<int>(MatchingParams::UPSAMPLE_LIMIT / MatchingParams::UPSAMPLE_INCREMENT);
 
   // Dilation factor for the pointcloud horizontal image
   static constexpr auto DILATION_FACTOR = 9;
-  
-  // Resolution of the organized pointcloud m^-1
+
+  // Organized pointcloud parameters
   static constexpr auto ORG_PCL_RESOLUTION = 20.0;
+  static constexpr auto ORG_PCL_WIDTH = 100;
+  static constexpr auto ORG_PCL_HEIGHT = 100;
 
   // Minimum point count to be considered as a valid detection
   static constexpr auto MIN_POINT_COUNT = 3500;
@@ -51,6 +54,6 @@ struct MatchingParams {
   // Warning message timeout
   static constexpr auto WARN_TIME = 5;
 };
-} // namespace pcl_params
+}// namespace pcl_params
 
 #endif
