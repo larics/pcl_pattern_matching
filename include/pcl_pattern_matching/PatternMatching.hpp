@@ -51,7 +51,7 @@ public:
 
     m_targetWallCloud = boost::make_shared<PCXYZ>();
     wall_from_ply(m_targetWallCloud,
-      "config/zid_tanko_upscale.ply");//"config/zid_single.ply");
+      "resources/wall_pattern_upscaled.ply");
     m_targetWallCloud = pcl_util::organize_pointcloud(m_targetWallCloud,
       MatchingParams::ORG_PCL_RESOLUTION,
       MatchingParams::ORG_PCL_WIDTH,
@@ -89,7 +89,7 @@ private:
   void wall_from_ply(PCXYZ::Ptr &t_wallCloud, const std::string &plyPath)
   {
     auto wallCloud = boost::make_shared<PCXYZ>();
-    std::string path = ros::package::getPath("pointcloud_filter") + "/" + plyPath;
+    std::string path = ros::package::getPath("pcl_pattern_matching") + "/" + plyPath;
     ROS_INFO("PatternMatching - %s", path.c_str());
     if (pcl::io::loadPLYFile(path, *wallCloud) == -1) {
       ROS_FATAL("PatternMatching - unable to load whe wall mesh, exiting...");

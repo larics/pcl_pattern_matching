@@ -54,7 +54,7 @@ static PCXYZ::Ptr upsample_pointcloud(const PCXYZ::Ptr &t_inputCloud,
       for (const auto &point : t_inputCloud->points) {
         upscaledPointcloud->points.emplace_back(
           pcl::PointXYZ(upsample_element(point.x, i),
-            upsample_element(point.y, i),
+            upsample_element(point.y, j),
             point.z / t_scalingFactor));
       }
     }
