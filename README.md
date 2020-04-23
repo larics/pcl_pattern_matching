@@ -1,6 +1,19 @@
 # PCL Pattern Matching
 
-This repository uses PCL and OpenCV libraries to perform 3D pattern matching on an unorganized pointcloud. Inputs are an unorganized pointcloud and a 3D model of a pattern. Output is the pose of the matched pattern wrt. the pointcloud frame.
+This repository uses PCL and OpenCV libraries to perform 3D pattern matching on an unorganized pointcloud. Inputs are an unorganized pointcloud and a 3D model of a pattern. Output is the pose of the matched pattern wrt. the pointcloud frame. Pattern needs to have a recognizable shape in the horizontal plane.
+
+## Dependencies
+
+Install all the dependencies as follows.
+
+```bash
+sudo apt install libopencv-dev libpcl-dev ros-melodic-mavros libgeographic-dev
+```
+
+To obtain a map pointcloud the following packages were used with a Velodyne VLP-16 LiDAR sensor.
+
+* [cartographer](https://github.com/larics/cartographer_ros)
+* [cartographer_ros](https://github.com/larics/cartographer_ros/tree/erl)
 
 ## MBZIR dataset
 
@@ -13,7 +26,7 @@ This repository uses PCL and OpenCV libraries to perform 3D pattern matching on 
 
 ### Detection demonstration
 
-On the left picture the green arrow indicates the pose of the target 3D model pattern. On the left side a top-down projection of the organized pointcloud is shown with an outlined pattern match.
+On the left the green arrow indicates the pose of the target 3D model pattern, while on the right side a top-down projection of the organized pointcloud is shown with an outlined pattern match.
 
 ```bash
 roscore
