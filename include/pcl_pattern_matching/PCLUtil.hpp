@@ -23,13 +23,100 @@ using PCXYZ = pcl::PointCloud<pcl::PointXYZ>;
 namespace pcl_util {
 
 /**
- * @brief Upsample the given pointcloud.
+ * @brief Load a given ply file in a pcl::POintcloud<pcl::PointXYZ> object.
  * 
+ * @param plyPath Path to the ply file.
+ * @return PCXYZ::Ptr Pointcloud representation of the ply file.
+ */
+static PCXYZ::Ptr pcl_from_ply(const std::string &plyPath)
+{
+  auto plyCloud = boost::make_shared<PCXYZ>();
+  ROS_INFO("pcl_from_ply() - Reading from path: %s", plyPath.c_str());
+  if (pcl::io::loadPLYFile(plyPath, *plyCloud) == -1) {
+    ROS_FATAL("pcl_from_ply() - unable to load whe wall mesh, exiting...");
+    throw std::runtime_error("pcl_from_ply() - unable to load wall mesh");
+  }
+  return plyCloud;
+}
+
+/**
+ * @brief Perform the ICP algorithm on the given input and target clouds and stores the
+ * aligned cloud in the third variable.
+ *
+ * @param t_inputCloud
+ * @param t_targetCloud
+ * @param t_alignedCloud
+ * @return Eigen::Matrix4f Transformation from the input to the target cloud.
+ */
+static Eigen::Matrix4f perform_icp(const PCXYZ::Ptr &t_inputCloud,
+  const PCXYZ::Ptr &t_targetCloud,
+  PCXYZ::Ptr &t_alignedCloud)
+{
+  constexpr auto WARN_TIMEOUT = 5;
+  if (t_inputCloud->empty()) {
+    ROS_WARN_THROTTLE(WARN_TIMEOUT, "PatternMatching::do_icp - empty cloud");
+    return {};
+  }
+
+  pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+  icp.setInputSource(t_inputCloud);
+  icp.setInputTarget(t_targetCloud);
+  t_alignedCloud->clear();
+  icp.align(*t_alignedCloud);
+  ROS_INFO_COND(icp.hasConverged(),
+    "PatternMatching::do_icp - ICP converged. Score: [%.2f]",
+    icp.getFitnessScore());
+  ROS_FATAL_COND(
+    !icp.hasConverged(), "PatternMatching::do_icp - ICP did not converge. :(");
+
+  if (!icp.hasConverged()) { return {}; }
+
+  // Do some stuff if converged
+  ROS_INFO_STREAM("ICP transformation: " << icp.getFinalTransformation());
+  return icp.getFinalTransformation();
+}
+
+/**
+ * @brief Perform a Box Filter on the given pointcloud.
+ *
+ * @param t_inputCloud Input pointcloud pointer.
+ * @param t_minHorizontalX
+ * @param t_maxHorizontalX
+ * @param t_minHorizontalY
+ * @param t_maxHorizontalY
+ * @param t_minVertical
+ * @param t_maxVertical
+ * @return PCXYZ::Ptr Filtered pointcloud pointer.
+ */
+static PCXYZ::Ptr box_filter(const PCXYZ::ConstPtr &t_inputCloud,
+  const float t_minHorizontalX,
+  const float t_maxHorizontalX,
+  const float t_minHorizontalY,
+  const float t_maxHorizontalY,
+  const float t_minVertical,
+  const float t_maxVertical)
+{
+  if (t_inputCloud->empty()) { return boost::make_shared<PCXYZ>(); }
+
+  auto newCloud = boost::make_shared<PCXYZ>();
+  pcl::CropBox<pcl::PointXYZ> boxFilter;
+  boxFilter.setMin(
+    Eigen::Vector4f(t_minHorizontalX, t_minHorizontalY, t_minVertical, 0.0));
+  boxFilter.setMax(
+    Eigen::Vector4f(t_maxHorizontalX, t_maxHorizontalY, t_maxVertical, 0.0));
+  boxFilter.setInputCloud(t_inputCloud);
+  boxFilter.filter(*newCloud);
+  return newCloud;
+}
+
+/**
+ * @brief Upsample the given pointcloud.
+ *
  * @param t_inputCloud The input pointcloud pointer.
- * @param t_scalingFactor 
- * @param t_upsampleIncrement 
- * @param t_upsampleOffset 
- * @param t_upsampleIter 
+ * @param t_scalingFactor
+ * @param t_upsampleIncrement
+ * @param t_upsampleOffset
+ * @param t_upsampleIter
  * @return PCXYZ::Ptr Upsampled pointcloud.
  */
 static PCXYZ::Ptr upsample_pointcloud(const PCXYZ::Ptr &t_inputCloud,
@@ -38,13 +125,14 @@ static PCXYZ::Ptr upsample_pointcloud(const PCXYZ::Ptr &t_inputCloud,
   const float t_upsampleOffset,
   const int t_upsampleIter)
 {
+  // Add the initial pointcloud pattern
   auto upscaledPointcloud = boost::make_shared<PCXYZ>();
   for (const auto &point : t_inputCloud->points) {
     upscaledPointcloud->points.emplace_back(pcl::PointXYZ(
       point.x / t_scalingFactor, point.y / t_scalingFactor, point.z / t_scalingFactor));
   }
 
-  // Upsample the wall
+  // Upsample the pointcloud
   const auto upsample_element = [&](const float unscaledPoint, const int iter) {
     return unscaledPoint / t_scalingFactor + t_upsampleOffset
            + iter * t_upsampleIncrement;
